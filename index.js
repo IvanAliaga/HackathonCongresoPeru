@@ -8,10 +8,37 @@ const
   express = require('express'),
   bodyParser = require('body-parser'),
   request = require('request'),
+  AssistantV1 = require('watson-developer-cloud/assistant/v1'),
   app = express().use(bodyParser.json()); // creates express http server
+
+const assistant = new AssistantV1({
+  username: 'd9173312-877b-4e8e-a651-b4428b1647f5',
+  password: 'RR5kGVED3N4c',
+  url: 'https://gateway.watsonplatform.net/assistant/api',
+  version: '2018-02-16',
+});
 
 // Sets server port and logs message on success
 app.listen(process.env.PORT || 80, () => console.log('webhook is listening'));
+
+
+let context = {};
+
+app.post('/conversation', (req, res) => {
+  const { text, context = {} } = req.body;
+
+  const params = {
+    input: { text },
+    workspace_id:'da95515c-4f2d-4fed-8bb5-cf0386897175',
+    context,
+  };
+
+  assistant.message(params, (err, response) => {
+    if (err) res.status(500).json(err);
+
+    res.json(response);
+  });
+});
 
 // Creates the endpoint for our webhook 
 app.post('/webhook', (req, res) => {  
@@ -24,19 +51,45 @@ app.post('/webhook', (req, res) => {
       // Iterates over each entry - there may be multiple if batched
       body.entry.forEach(function(entry) {
 
+          //Gets data watson
+          let data_watson;
+      
           // Gets the body of the webhook event
           let webhook_event = entry.messaging[0];
-          console.log(webhook_event);
-
+    
+          //console.log(webhook_event);
 
           // Get the sender PSID
-          let sender_psid = webhook_event.sender.id;
+          let sender_psid = webhook_event.sender.id; //save in the DB
           console.log('Sender PSID: ' + sender_psid);
 
+        
           // Check if the event is a message or postback and
           // pass the event to the appropriate handler function
-          if (webhook_event.message) {
-            handleMessage(sender_psid, webhook_event.message);        
+          if (webhook_event.message) {   
+
+           let data_watson = "";
+           let text = webhook_event.message.text;
+           console.log(text);
+           const uri = 'http://localhost/conversation';
+
+           var myJSONObject = { text, context};
+
+           request({
+                url: uri,
+                headers: { 'Content-Type': 'application/json' },
+                method: "POST",
+                json: true,
+                body: myJSONObject
+            }, function (error, response, body){
+                context = response.context;
+                data_watson = body.output.text[0];
+                //console.log("data watson; "+data_watson);
+                handleMessage(sender_psid, data_watson);
+            });
+
+            //handleMessage(sender_psid, webhook_event.message);        
+          
           } else if (webhook_event.postback) {
             handlePostback(sender_psid, webhook_event.postback);
           }
@@ -53,16 +106,14 @@ app.post('/webhook', (req, res) => {
     // Handles messages events
     function handleMessage(sender_psid, received_message) {
       let response;
+      // Creates the payload for a basic text message, which
+      // will be added to the body of our request to the Send API
+      response = {
+        "text": `${received_message}`
+      }
 
-      // Checks if the message contains text
-      if (received_message.text) {
-        // Creates the payload for a basic text message, which
-        // will be added to the body of our request to the Send API
-        response = {
-          "text": `You sent the message: "${received_message.text}". Now send me an attachment!`
-        }
-
-      } else if (received_message.attachments) {
+      //}
+       /*else if (received_message.attachments) {
         // Gets the URL of the message attachment
         let attachment_url = received_message.attachments[0].payload.url;
         response = {
@@ -90,27 +141,10 @@ app.post('/webhook', (req, res) => {
             }
           }
         }
-      } 
+      } */
       
       // Sends the response message
       callSendAPI(sender_psid, response);    
-    }
-
-    // Handles messaging_postbacks events
-    function handlePostback(sender_psid, received_postback) {
-      let response;
-  
-      // Get the payload for the postback
-      let payload = received_postback.payload;
-
-      // Set the response based on the postback payload
-      if (payload === 'yes') {
-        response = { "text": "Thanks!" }
-      } else if (payload === 'no') {
-        response = { "text": "Oops, try sending another image." }
-      }
-      // Send the message to acknowledge the postback
-      callSendAPI(sender_psid, response);
     }
 
     // Sends response messages via the Send API
@@ -122,6 +156,8 @@ app.post('/webhook', (req, res) => {
         },
         "message": response
       }
+
+      //console.log("te envio el " + response.text);
 
       // Send the HTTP request to the Messenger Platform
       request({
