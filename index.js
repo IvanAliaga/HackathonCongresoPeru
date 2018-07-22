@@ -9,6 +9,7 @@ const
   bodyParser = require('body-parser'),
   request = require('request'),
   AssistantV1 = require('watson-developer-cloud/assistant/v1'),
+  mysql      = require('mysql'),
   app = express().use(bodyParser.json()); // creates express http server
 
 const assistant = new AssistantV1({
@@ -18,11 +19,101 @@ const assistant = new AssistantV1({
   version: '2018-02-16',
 });
 
-// Sets server port and logs message on success
-app.listen(process.env.PORT || 80, () => console.log('webhook is listening'));
-
 
 let context = {};
+
+var connection = mysql.createConnection({
+  host     : 'localhost',
+  PORT     : 3306,
+  user     : 'root',
+  password : '12345678',
+  database : 'proyecta' 
+});
+
+connection.connect();
+//connection.end();
+
+/*connection.connect(function(err) {
+  if (err) {
+    console.error('error connecting: ' + err.stack);
+    return;
+  }
+
+  console.log('connected as id ' + connection.threadId);
+});
+*/
+//select();
+
+function select(){
+  //connection.connect();
+
+  connection.query('SELECT * FROM chat_user', function (error, results, fields) {
+    if (error) throw error;
+    console.log('The solution is: ', results);
+  });
+  
+  //connection.end();
+}
+let size;
+function exist_person_chat_db(id){
+  //connection.connect();
+
+  connection.query('SELECT * FROM chat_user WHERE id = "'+id+'"', function (error, results , fields) {
+    if (error) throw error;
+    
+    size = results.length;
+    if(typeof size == "undefined"){
+      size = 0;
+    }
+    console.log("results " + size);
+    init_chat_db(id);
+
+  });
+  //connection.end();
+
+}
+
+function init_chat_db(id){
+  //connection.connect();
+  //let exist = exist_person_chat_db(id);
+  //console.log("exist " + exist);
+  //exist_person_chat_db(id);
+  console.log("exist " + size);
+  if(size==0){
+    console.log('entré');
+    connection.query('INSERT INTO chat_user VALUES ("'+(id)+'", 0)', function (error, results, fields) {
+      if (error) throw error;
+      console.log('The solution is: ', results);
+    });
+  }
+
+  //connection.end();
+}
+
+function subscribe_chat_db(id){
+  //connection.connect();
+
+  connection.query('UPDATE chat_user SET subscribed = 1 WHERE id = '+(id)+';', function (error, results, fields) {
+    if (error) throw error;
+    //console.log('The solution is: ', results);
+  });
+
+  //connection.end();
+}
+
+function unscribe_chatx_db(id){
+  //connection.connect();
+  connection.query('UPDATE chat_user SET subscribed = 0 WHERE id = '+(id)+';', function (error, results, fields) {
+    if (error) throw error;
+    //console.log('The solution is: ', results);
+  });
+  //connection.end();
+}
+
+
+
+
+
 
 app.post('/conversation', (req, res) => {
   const { text, context = {} } = req.body;
@@ -42,7 +133,7 @@ app.post('/conversation', (req, res) => {
 
 // Creates the endpoint for our webhook 
 app.post('/webhook', (req, res) => {  
- 
+
     let body = req.body;
   
     // Checks this is an event from a page subscription
@@ -62,6 +153,7 @@ app.post('/webhook', (req, res) => {
           // Get the sender PSID
           let sender_psid = webhook_event.sender.id; //save in the DB
           console.log('Sender PSID: ' + sender_psid);
+          exist_person_chat_db(sender_psid);
 
         
           // Check if the event is a message or postback and
@@ -85,6 +177,17 @@ app.post('/webhook', (req, res) => {
                 context = response.context;
                 data_watson = body.output.text[0];
                 //console.log("data watson; "+data_watson);
+
+                /*if(text=="subscribed"){
+                  subscribe_chat_db(sender_psid);
+                }else if(text=="unscribed"){
+                  unscribe_chatx_db(sender_psid);
+                }*/
+
+                if(data_watson=="Suscrito."){
+                  subscribe_chat_db(sender_psid);
+                }
+
                 handleMessage(sender_psid, data_watson);
             });
 
@@ -147,35 +250,68 @@ app.post('/webhook', (req, res) => {
       callSendAPI(sender_psid, response);    
     }
 
-    // Sends response messages via the Send API
-    function callSendAPI(sender_psid, response) {
-      // Construct the message body
-      let request_body = {
-        "recipient": {
-          "id": sender_psid
-        },
-        "message": response
-      }
-
-      //console.log("te envio el " + response.text);
-
-      // Send the HTTP request to the Messenger Platform
-      request({
-        "uri": "https://graph.facebook.com/v2.6/me/messages",
-        "qs": { "access_token": PAGE_ACCESS_TOKEN },
-        "method": "POST",
-        "json": request_body
-      }, (err, res, body) => {
-        if (!err) {
-          console.log('message sent!')
-        } else {
-          console.error("Unable to send message:" + err);
-        }
-      }); 
-
-    }
-  
+    
   });
+
+// Sends response messages via the Send API
+function callSendAPI(sender_psid, response) {
+  // Construct the message body
+  let request_body = {
+    "recipient": {
+      "id": sender_psid
+    },
+    "message": response
+  }
+
+  //console.log("te envio el " + response.text);
+
+  // Send the HTTP request to the Messenger Platform
+  request({
+    "uri": "https://graph.facebook.com/v2.6/me/messages",
+    "qs": { "access_token": PAGE_ACCESS_TOKEN },
+    "method": "POST",
+    "json": request_body
+  }, (err, res, body) => {
+    if (!err) {
+      console.log('message sent!')
+      //connection.end();
+    } else {
+      console.error("Unable to send message:" + err);
+      //connection.end();
+    }
+  }); 
+
+}
+
+function callSendAPI2(sender_psid, response) {
+  // Construct the message body
+  let request_body = {
+    "messaging_type": "UPDATE",
+    "recipient": {
+      "id": sender_psid
+    },
+    "message": response
+  }
+
+  //console.log("te envio el " + response.text);
+
+  // Send the HTTP request to the Messenger Platform
+  request({
+    "uri": "https://graph.facebook.com/v2.6/me/messages",
+    "qs": { "access_token": PAGE_ACCESS_TOKEN },
+    "method": "POST",
+    "json": request_body
+  }, (err, res, body) => {
+    if (!err) {
+      console.log('message sent!')
+      //connection.end();
+    } else {
+      console.error("Unable to send message:" + err);
+      //connection.end();
+    }
+  }); 
+
+}
 
 // Adds support for GET requests to our webhook
 app.get('/webhook', (req, res) => {
@@ -206,3 +342,20 @@ app.get('/webhook', (req, res) => {
     }
 
 });
+
+app.get('/start', (req, res) => {
+    
+    connection.query('SELECT * FROM chat_user', function (error, results , fields) {
+      if (error) throw error;
+
+      for (var index in results) {
+        console.log("results " + results[index].id);
+        callSendAPI2(results[index].id, "Se aprobó la nueva ley 666. full rockanroll en las calles.");   
+      }
+    });
+
+    res.status(200).send('win');
+});
+
+// Sets server port and logs message on success
+app.listen(process.env.PORT || 80, () => console.log('webhook is listening'));;
